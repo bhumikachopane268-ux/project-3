@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Relationship Adviser</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 700px; margin: 30px auto; padding: 0 15px; background: #faf8f6; }
+  h1 { color: #6e4a72; }
+  nav button { padding: 8px 14px; margin-right: 6px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; }
+  nav button.active { background: #9b6b9e; color: white; }
+  section { display: none; margin-top: 20px; }
+  section.active { display: block; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 12px; }
+  #chat-box { height: 300px; overflow-y: auto; }
+  .msg { margin: 8px 0; padding: 8px 12px; border-radius: 8px; max-width: 75%; }
+  .user { background: #9b6b9e; color: white; margin-left: auto; text-align: right; }
+  .bot { background: #eee; }
+  input, textarea, select { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
+  button.send { padding: 8px 16px; background: #9b6b9e; color: white; border: none; border-radius: 6px; cursor: pointer; }
+  .star { font-size: 24px; cursor: pointer; color: #ccc; }
+  .star.on { color: gold; }
+  .linkbtn { background: none; border: none; color: #9b6b9e; text-decoration: underline; cursor: pointer; font-size: 13px; float: right; }
+</style>
+</head>
+<body>
+
+<h1>💜 Relationship Adviser</h1>
+
+<!-- LOGIN -->
+<div id="login" class="card">
+  <h3>Login</h3>
+  <input id="username" placeholder="Enter your name">
+  <button class="send" onclick="login()">Continue</button>
+</div>
+
+<!-- MAIN APP (hidden until login) -->
+<div id="app" style="display:none">
+
+  <button class="linkbtn" onclick="logout()">Sign out</button>
+  <nav>
+    <button onclick="show('chat')" class="active">Chat</button>
+    <button onclick="show('assess')">Assessment</button>
+    <button onclick="show('history')">History</button>
+    <button onclick="show('feedback')">Feedback</button>
+  </nav>
+
+  <!-- CHAT -->
+  <section id="chat" class="active">
+    <div class="card">
+      <div id="chat-box"></div>
+      <textarea id="chat-input" rows="2" placeholder="Describe what's going on..."></textarea>
+      <button class="send" onclick="sendMessage()">Send</button>
+    </div>
+  </section>
+
+  <!-- ASSESSMENT -->
+  <section id="assess">
+    <div class="card">
+      <h3>Quick Relationship Check-In</h3>
+      <div id="quiz"></div>
+      <button class="send" onclick="scoreQuiz()">See My Score</button>
+      <div id="quiz-result"></div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history">
+    <h3>Your History</h3>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- FEEDBACK -->
+  <section id="feedback">
+    <div class="card">
+      <h3>Rate this app</h3>
+      <div id="stars">
+        <span class="star" data-v="1">★</span>
+        <span class="star" data-v="2">★</span>
+        <span class="star" data-v="3">★</span>
+        <span class="star" data-v="4">★</span>
+        <span class="star" data-v="5">★</span>
+      </div>
+      <textarea id="fb-text" placeholder="Comments (optional)"></textarea>
+      <button class="send" onclick="submitFeedback()">Submit</button>
+    </div>
+    <div id="feedback-list"></div>
+  </section>
+
+</div>
+
+<script>
+// ---------- Storage keys ----------
+const KEY_USER = 'ra_user';
+const KEY_HISTORY = 'ra_history';
+const KEY_FEEDBACK = 'ra_feedback';
+const KEY_CHATLOG = 'ra_chatlog';
+
+// ---------- Data (loaded from localStorage) ----------
+let userName = localStorage.getItem(KEY_USER) || "";
+let history = JSON.parse(localStorage.getItem(KEY_HISTORY) || "[]");
+let feedback = JSON.parse(localStorage.getItem(KEY_FEEDBACK) || "[]");
+let chatLog = JSON.parse(localStorage.getItem(KEY_CHATLOG) || "[]");
+let rating = 0;
+
+const QUESTIONS = [
+  "I feel comfortable sharing my feelings with my partner.",
+  "We listen to each other during disagreements.",
+  "I trust my partner.",
+  "We make time for each other.",
+  "I feel appreciated in this relationship."
+];
+
+const SYSTEM_PROMPT = `You are a warm, empathetic, unbiased relationship adviser.
+Give practical tips on communication, conflict resolution, trust-building, and emotional support.
+Keep replies short (3-5 sentences). Never take sides. If the user mentions abuse or self-harm,
+gently encourage them to seek help from a professional or crisis hotline.`;
+
+// ---------- Save helpers ----------
+function saveHistory() { localStorage.setItem(KEY_HISTORY, JSON.stringify(history)); }
+function saveFeedback() { localStorage.setItem(KEY_FEEDBACK, JSON.stringify(feedback)); }
+function saveChatLog() { localStorage.setItem(KEY_CHATLOG, JSON.stringify(chatLog)); }
+
+// ---------- Init: auto-login if user exists ----------
+window.addEventListener('DOMContentLoaded', () => {
+  if (userName) {
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    restoreChat();
+  }
+});
+
+// ---------- Login / Logout ----------
+function login() {
+  const name = document.getElementById('username').value.trim();
+  if (!name) return alert("Please enter your name");
+  userName = name;
+  localStorage.setItem(KEY_USER, userName);
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  restoreChat();
+}
+
+function logout() {
+  localStorage.removeItem(KEY_USER);
+  localStorage.removeItem(KEY_HISTORY);
+  localStorage.removeItem(KEY_FEEDBACK);
+  localStorage.removeItem(KEY_CHATLOG);
+  location.reload();
+}
+
+// ---------- Navigation ----------
+function show(id) {
+  document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+  if (id === 'history') renderHistory();
+  if (id === 'assess') renderQuiz();
+  if (id === 'feedback') renderFeedback();
+}
+
+// ---------- Chat ----------
+function addMessage(who, text, save = true) {
+  const box = document.getElementById('chat-box');
+  const div = document.createElement('div');
+  div.className = 'msg ' + who;
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  if (save) {
+    chatLog.push({ who, text });
+    saveChatLog();
+  }
+}
+
+function restoreChat() {
+  const box = document.getElementById('chat-box');
+  box.innerHTML = '';
+  if (chatLog.length === 0) {
+    addMessage('bot', `Hi ${userName}! Tell me what's on your mind about your relationship, and I'll do my best to help.`);
+  } else {
+    chatLog.forEach(m => addMessage(m.who, m.text, false));
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  addMessage('user', text);
+  input.value = '';
+
+  // save to history log (separate from chatLog, used in History tab)
+  history.push({ type: 'chat', text: text, date: new Date().toLocaleString() });
+  saveHistory();
+
+  addMessage('bot', '...thinking...', false);
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 500,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: text }]
+      })
+    });
+    const data = await res.json();
+    const reply = data.content.find(c => c.type === 'text')?.text || "Sorry, I couldn't respond.";
+
+    document.getElementById('chat-box').lastChild.remove(); // remove "...thinking..."
+    addMessage('bot', reply);
+  } catch (e) {
+    document.getElementById('chat-box').lastChild.remove();
+    addMessage('bot', "Sorry, something went wrong. Please try again.");
+  }
+}
+
+// ---------- Assessment ----------
+function renderQuiz() {
+  const quiz = document.getElementById('quiz');
+  quiz.innerHTML = '';
+  QUESTIONS.forEach((q, i) => {
+    quiz.innerHTML += `
+      <p><b>${i + 1}. ${q}</b></p>
+      <select id="q${i}">
+        <option value="1">Strongly Disagree</option>
+        <option value="2">Disagree</option>
+        <option value="3">Neutral</option>
+        <option value="4">Agree</option>
+        <option value="5">Strongly Agree</option>
+      </select>`;
+  });
+  document.getElementById('quiz-result').innerHTML = '';
+}
+
+function scoreQuiz() {
+  let total = 0;
+  QUESTIONS.forEach((q, i) => {
+    total += parseInt(document.getElementById('q' + i).value);
+  });
+  const pct = Math.round((total / (QUESTIONS.length * 5)) * 100);
+
+  let msg;
+  if (pct >= 70) msg = "Your relationship shows healthy patterns. Keep it up!";
+  else if (pct >= 45) msg = "Some good foundations, but a few areas need attention.";
+  else msg = "Several areas seem to need work. Consider talking openly with your partner.";
+
+  document.getElementById('quiz-result').innerHTML =
+    `<h3>Score: ${pct}%</h3><p>${msg}</p>`;
+
+  history.push({ type: 'assessment', text: `Score: ${pct}% - ${msg}`, date: new Date().toLocaleString() });
+  saveHistory();
+}
+
+// ---------- History ----------
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (history.length === 0) {
+    list.innerHTML = '<p>No history yet.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  history.slice().reverse().forEach(item => {
+    list.innerHTML += `
+      <div class="card">
+        <small>${item.date} — ${item.type.toUpperCase()}</small>
+        <p>${item.text}</p>
+      </div>`;
+  });
+}
+
+// ---------- Feedback ----------
+document.getElementById('stars').addEventListener('click', e => {
+  if (!e.target.classList.contains('star')) return;
+  rating = parseInt(e.target.dataset.v);
+  document.querySelectorAll('.star').forEach(s => {
+    s.classList.toggle('on', parseInt(s.dataset.v) <= rating);
+  });
+});
+
+function submitFeedback() {
+  if (rating === 0) return alert("Please select a star rating");
+  const comment = document.getElementById('fb-text').value.trim();
+  feedback.push({ rating, comment, date: new Date().toLocaleString() });
+  saveFeedback();
+  document.getElementById('fb-text').value = '';
+  rating = 0;
+  document.querySelectorAll('.star').forEach(s => s.classList.remove('on'));
+  renderFeedback();
+}
+
+function renderFeedback() {
+  const list = document.getElementById('feedback-list');
+  list.innerHTML = '';
+  feedback.slice().reverse().forEach(f => {
+    list.innerHTML += `
+      <div class="card">
+        <div>${'★'.repeat(f.rating)}${'☆'.repeat(5 - f.rating)}</div>
+        <p>${f.comment}</p>
+        <small>${f.date}</small>
+      </div>`;
+  });
+}
+</script>
+</body>
+</html>
